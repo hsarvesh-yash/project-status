@@ -27,6 +27,7 @@ interface IProjcetEditableField {
   KeyUpdates: string;
   ProjectDescription: string;
   NextStepUpdates: string;
+  BillingValue: string;
 }
 
 interface IRiskAssessment {
@@ -44,6 +45,7 @@ interface IRiskAssessment {
 
 interface IContracts {
   TotalContractValue: number;
+  BillingValue: number;
 }
 
 interface IWSROutputItem {
@@ -75,6 +77,7 @@ interface IWSROutputItem {
   ProjectDescription: string;
   NextStepUpdates: string;
   TotalContractValue: number;
+  BillingValue: number;
 }
 
 interface ISPProjectItem {
@@ -111,6 +114,13 @@ interface ISPContractItem extends Record<string, unknown> {
   ContractValue?: number;
   TotalValue?: number;
   Amount?: number;
+  BillingValue?: number;
+  BilledValue?: number;
+  BillingAmount?: number;
+  InvoicedAmount?: number;
+  TotalInvoiced?: number;
+  InvoiceAmount?: number;
+  TotalBilled?: number;
   ProjectID?: unknown;
   ProjectId?: unknown;
 }
@@ -133,6 +143,7 @@ interface ISPWSROutputRecord {
   deployedHeadCount?: number;
   BillableHeadCount?: number;
   TotalContractValue?: number;
+  BillingValue?: number;
 }
 
 export default function ProjectStatus(props: IProjectStatusProps): React.ReactElement<IProjectStatusProps> {
@@ -160,7 +171,26 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
     KeyUpdates: '',
     ProjectDescription: '',
     NextStepUpdates: '',
+    BillingValue: '',
   });
+
+  const calculateMonthlyBilling = (tcv: number, startDateStr?: string, endDateStr?: string): string => {
+    if (!tcv || tcv <= 0 || !startDateStr || !endDateStr) return '';
+    try {
+      const start = new Date(startDateStr);
+      const end = new Date(endDateStr);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return '';
+
+      let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      if (end.getDate() >= start.getDate()) months += 1;
+      if (months <= 0) months = 1;
+
+      const monthly = tcv / months;
+      return monthly.toFixed(2);
+    } catch {
+      return '';
+    }
+  };
 
   const executeAsync = (promise: Promise<unknown>): void => {
     promise.catch((err: unknown) => {
@@ -205,13 +235,13 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
   const getRiskColor = (status: string): string => {
     switch (status.toLowerCase()) {
       case 'red':
-        return 'FF0000';
+        return 'EF4444';
       case 'amber':
-        return 'FFA500';
+        return 'F59E0B';
       case 'green':
-        return '00FF00';
+        return '10B981';
       default:
-        return '00FF00';
+        return '10B981';
     }
   };
 
@@ -337,10 +367,25 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
         const rawVal = item.TotalContractValue ?? item.ContractValue ?? item.TotalValue ?? item.Amount ?? 0;
         const numericVal = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal).replace(/[^0-9.-]+/g, '')) || 0;
         
+        const rawBilling = item.BillingValue ?? item.BilledValue ?? item.BillingAmount ?? item.InvoicedAmount ?? item.TotalInvoiced ?? item.InvoiceAmount ?? item.TotalBilled ?? 0;
+        const numericBilling = typeof rawBilling === 'number' ? rawBilling : parseFloat(String(rawBilling).replace(/[^0-9.-]+/g, '')) || 0;
+
         const Contracts: IContracts = {
           TotalContractValue: numericVal,
+          BillingValue: numericBilling
         };
         setcontractDetails(Contracts);
+
+        // Auto-populate monthly billing input field if currently empty
+        setprojectEditableField(prev => {
+          if (!prev.BillingValue) {
+            const autoBilling = numericBilling > 0 
+              ? numericBilling.toString() 
+              : calculateMonthlyBilling(numericVal, projectDetails?.PlannedStartDate, projectDetails?.PlannedEndDate);
+            return { ...prev, BillingValue: autoBilling };
+          }
+          return prev;
+        });
       } else {
         console.log("[getTotalContractValueData] No matching contract found for ProjectID:", projectId);
         setcontractDetails(null);
@@ -357,9 +402,11 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
         .getByTitle("IMSProjects")
         .items
         .filter(`ProjectID eq '${projectId}' and IsProcess eq 'Yes'`)
-        .select('ProjectID,CustomerName,ProjectName,ProjectType,PlannedStartDate,PlannedEndDate,DeliveryManager/Title,ProjectManager/Title,Currency,TotalSOWAmount,ProjectGEOS,QualityEngineer/Title')
+        .select('*,ProjectID,CustomerName,ProjectName,ProjectType,PlannedStartDate,PlannedEndDate,DeliveryManager/Title,ProjectManager/Title,Currency,TotalSOWAmount,ProjectGEOS,QualityEngineer/Title')
         .expand("DeliveryManager,ProjectManager,QualityEngineer")();
       if (projectData && projectData.length > 0) {
+        const itemObj = projectData[0] as unknown as Record<string, unknown>;
+        const rawSow = itemObj.TotalSOWAmount ?? itemObj.SOWAmount ?? itemObj.TotalSOW ?? itemObj.SOWValue ?? itemObj.ContractValue ?? '';
         const projectItem: IProjectItem = {
           ProjectID: projectData[0].ProjectID,
           ProjectName: projectData[0].ProjectName,
@@ -368,9 +415,9 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
           PlannedEndDate: formatDate(projectData[0].PlannedEndDate) || 'Not specified',
           projectManager: projectData[0].ProjectManager?.Title || '',
           deliveryManager: projectData[0].DeliveryManager?.Title || '',
-          TotalSOWAmount: projectData[0].TotalSOWAmount,
-          Currency: projectData[0].Currency,
-          ProjectGEOS: projectData[0].ProjectGEOS,
+          TotalSOWAmount: String(rawSow),
+          Currency: projectData[0].Currency || '',
+          ProjectGEOS: projectData[0].ProjectGEOS || '',
           QualityEngineer: projectData[0].QualityEngineer?.Title || '',
         };
 
@@ -414,7 +461,8 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
         setprojectEditableField({
           KeyUpdates: existingData.KeyUpdates || '',
           ProjectDescription: existingData.ProjectDescription || '',
-          NextStepUpdates: existingData.NextStepUpdates || ''
+          NextStepUpdates: existingData.NextStepUpdates || '',
+          BillingValue: existingData.BillingValue ? existingData.BillingValue.toString() : ''
         });
 
         if (existingData.deployedHeadCount !== null && existingData.deployedHeadCount !== undefined) {
@@ -424,7 +472,10 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
           setbillableHeadCount(existingData.BillableHeadCount);
         }
         if (existingData.TotalContractValue !== null && existingData.TotalContractValue !== undefined) {
-          setcontractDetails({ TotalContractValue: existingData.TotalContractValue });
+          setcontractDetails({
+            TotalContractValue: existingData.TotalContractValue,
+            BillingValue: existingData.BillingValue || 0
+          });
         }
 
         setSaveMessage({
@@ -492,7 +543,8 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
         setprojectEditableField({
           KeyUpdates: mostRecentData.KeyUpdates || '',
           ProjectDescription: mostRecentData.ProjectDescription || '',
-          NextStepUpdates: mostRecentData.NextStepUpdates || ''
+          NextStepUpdates: mostRecentData.NextStepUpdates || '',
+          BillingValue: mostRecentData.BillingValue ? mostRecentData.BillingValue.toString() : ''
         });
 
         if (mostRecentData.deployedHeadCount !== null && mostRecentData.deployedHeadCount !== undefined) {
@@ -502,7 +554,10 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
           setbillableHeadCount(mostRecentData.BillableHeadCount);
         }
         if (mostRecentData.TotalContractValue !== null && mostRecentData.TotalContractValue !== undefined) {
-          setcontractDetails({ TotalContractValue: mostRecentData.TotalContractValue });
+          setcontractDetails({
+            TotalContractValue: mostRecentData.TotalContractValue,
+            BillingValue: mostRecentData.BillingValue || 0
+          });
         }
 
         const createdDate = new Date(mostRecentData.Created).toLocaleDateString();
@@ -534,6 +589,7 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
     }
 
     try {
+      const numBilling = parseFloat(projectEditableField.BillingValue.replace(/[^0-9.-]+/g, '')) || (contractDetails?.BillingValue || 0);
       const reportTitle = `${projectDetails.ProjectName} - WSR - ${getCurrentDate()}`;
       const wsrData: Partial<IWSROutputItem> = {
         Title: reportTitle,
@@ -564,6 +620,7 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
         ProjectDescription: projectEditableField.ProjectDescription,
         NextStepUpdates: projectEditableField.NextStepUpdates,
         TotalContractValue: (contractDetails && contractDetails.TotalContractValue) || 0,
+        BillingValue: numBilling,
       };
 
       await sp.web.lists.getByTitle("WSROutput").items.add(wsrData);
@@ -593,6 +650,16 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
       return;
     }
 
+    const numBilling = parseFloat(projectEditableField.BillingValue.replace(/[^0-9.-]+/g, '')) || 0;
+    if (!numBilling || numBilling <= 0) {
+      setSaveMessage({
+        type: MessageBarType.error,
+        text: "Please enter a valid Monthly Billing Value on the form before exporting to PowerPoint!"
+      });
+      setTimeout(() => setSaveMessage(null), 6000);
+      return;
+    }
+
     try {
       const saveSuccess = await saveToWSROutput();
 
@@ -612,160 +679,188 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
         x: 0.4,
         y: 0.28,
         w: 5.0,
-        h: 0.2,
-        color: '0073CF',
-        fontSize: 16,
+        h: 0.3,
+        color: '0F172A',
+        fontSize: 15,
         bold: true
       });
 
       slide1.addText(`Updated as on ${formattedDate}`, {
         x: 5.5,
         y: 0.28,
-        w: 3.0,
-        h: 0.2,
-        color: '00CC00',
+        w: 3.8,
+        h: 0.3,
+        color: '059669',
         fontSize: 12,
         bold: true,
-        align: 'left'
+        align: 'right'
       });
 
+      // Accent vertical bar
       slide1.addShape(pptx.ShapeType.rect, {
         x: 0.2,
-        y: 0.8,
-        w: 9.4,
+        y: 0.72,
+        w: 0.06,
         h: 0.9,
-        fill: { color: 'FFFFFF' },
-        line: { color: '000000', width: 1 },
-        rectRadius: 0.05
+        fill: { color: '0073CF' },
+        line: { color: '0073CF', width: 0 }
       });
 
-      slide1.addText(`Project Description – ${projectEditableField.ProjectDescription || ''}`, {
-        x: 0.3,
-        y: 0.9,
-        w: 9.2,
-        h: 0.7,
-        fontSize: 11,
-        color: '000000'
+      // Project Description Banner Box
+      slide1.addShape(pptx.ShapeType.rect, {
+        x: 0.26,
+        y: 0.72,
+        w: 9.34,
+        h: 0.9,
+        fill: { color: 'F8FAFC' },
+        line: { color: 'CBD5E1', width: 0.5 }
       });
 
+      slide1.addText([
+        { text: "Project Description: ", options: { bold: true, color: '0F172A', fontSize: 11 } },
+        { text: projectEditableField.ProjectDescription || 'No description provided.', options: { color: '334155', fontSize: 10.5 } }
+      ], {
+        x: 0.38,
+        y: 0.76,
+        w: 9.1,
+        h: 0.8,
+        valign: 'top',
+        wrap: true
+      });
+
+      // Left Section Header
       slide1.addText("Week Ending Status Report: " + getCurrentDate(), {
         x: 0.2,
-        y: 1.8,
-        w: 3.5,
-        h: 0.2,
-        fill: { color: '0073CF' },
+        y: 1.72,
+        w: 3.4,
+        h: 0.3,
+        fill: { color: '0F172A' },
         color: 'FFFFFF',
-        fontSize: 12,
+        fontSize: 11,
         bold: true,
-        valign: 'middle'
+        valign: 'middle',
+        align: 'center'
       });
 
       const tableData = [
         [
-          { text: 'Type', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
-          { text: projectDetails.ProjectType, options: { fill: { color: 'F0F0F0' }, color: '000000', valign: 'middle' } }
+          { text: 'Type', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: projectDetails.ProjectType, options: { fill: { color: 'F8FAFC' }, color: '1E293B', valign: 'middle' } }
         ],
         [
-          { text: 'Start Date', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
-          { text: projectDetails.PlannedStartDate, options: { fill: { color: 'F0F0F0' }, color: '000000', valign: 'middle' } }
+          { text: 'Start Date', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: projectDetails.PlannedStartDate, options: { fill: { color: 'FFFFFF' }, color: '1E293B', valign: 'middle' } }
         ],
         [
-          { text: 'End Date', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
-          { text: projectDetails.PlannedEndDate, options: { fill: { color: 'F0F0F0' }, color: '000000', valign: 'middle' } }
+          { text: 'End Date', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: projectDetails.PlannedEndDate, options: { fill: { color: 'FFFFFF' }, color: '1E293B', valign: 'middle' } }
         ],
         [
-          { text: 'Overall Status', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
+          { text: 'Overall Status', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
           {
-            text: riskAssessment.overallStatus.charAt(0).toUpperCase() + riskAssessment.overallStatus.slice(1),
+            text: riskAssessment.overallStatus.toUpperCase(),
             options: {
               fill: { color: getRiskColor(riskAssessment.overallStatus) },
-              color: riskAssessment.overallStatus === 'green' ? '000000' : 'FFFFFF',
+              color: 'FFFFFF',
+              bold: true,
+              align: 'center',
               valign: 'middle'
             }
           }
         ],
         [
-          { text: 'Scope', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
+          { text: 'Scope', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
           {
-            text: riskAssessment.scope.charAt(0).toUpperCase() + riskAssessment.scope.slice(1),
+            text: riskAssessment.scope.toUpperCase(),
             options: {
               fill: { color: getRiskColor(riskAssessment.scope) },
-              color: riskAssessment.scope === 'green' ? '000000' : 'FFFFFF',
+              color: 'FFFFFF',
+              bold: true,
+              align: 'center',
               valign: 'middle'
             }
           }
         ],
         [
-          { text: 'Schedule', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
+          { text: 'Schedule', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
           {
-            text: riskAssessment.schedule.charAt(0).toUpperCase() + riskAssessment.schedule.slice(1),
+            text: riskAssessment.schedule.toUpperCase(),
             options: {
               fill: { color: getRiskColor(riskAssessment.schedule) },
-              color: riskAssessment.schedule === 'green' ? '000000' : 'FFFFFF',
+              color: 'FFFFFF',
+              bold: true,
+              align: 'center',
               valign: 'middle'
             }
           }
         ],
         [
-          { text: 'Deliverable Quality', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
+          { text: 'Deliverable Quality', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
           {
-            text: riskAssessment.deliverableQuality.charAt(0).toUpperCase() + riskAssessment.deliverableQuality.slice(1),
+            text: riskAssessment.deliverableQuality.toUpperCase(),
             options: {
               fill: { color: getRiskColor(riskAssessment.deliverableQuality) },
-              color: riskAssessment.deliverableQuality === 'green' ? '000000' : 'FFFFFF',
+              color: 'FFFFFF',
+              bold: true,
+              align: 'center',
               valign: 'middle'
             }
           }
         ],
         [
-          { text: 'Resource Availability', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
+          { text: 'Resource Availability', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
           {
-            text: riskAssessment.resourceAvailability.charAt(0).toUpperCase() + riskAssessment.resourceAvailability.slice(1),
+            text: riskAssessment.resourceAvailability.toUpperCase(),
             options: {
               fill: { color: getRiskColor(riskAssessment.resourceAvailability) },
-              color: riskAssessment.resourceAvailability === 'green' ? '000000' : 'FFFFFF',
+              color: 'FFFFFF',
+              bold: true,
+              align: 'center',
               valign: 'middle'
             }
           }
         ],
         [
-          { text: 'Billable Head Count', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
-          { text: billableHeadCount !== null ? billableHeadCount.toFixed(2) : 'N/A', options: { fill: { color: 'F0F0F0' }, color: '000000', valign: 'middle' } }
+          { text: 'Billable Head Count', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: billableHeadCount !== null ? billableHeadCount.toFixed(2) : 'N/A', options: { fill: { color: 'F8FAFC' }, color: '1E293B', valign: 'middle' } }
         ],
         [
-          { text: 'Deployed Head Count', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
-          { text: deployedHeadCount !== null ? deployedHeadCount.toFixed(2) : 'N/A', options: { fill: { color: 'F0F0F0' }, color: '000000', valign: 'middle' } }
+          { text: 'Deployed Head Count', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: deployedHeadCount !== null ? deployedHeadCount.toString() : 'N/A', options: { fill: { color: 'FFFFFF' }, color: '1E293B', valign: 'middle' } }
         ],
         [
-          { text: 'SOW value', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
-          { text: `${projectDetails.Currency} ${projectDetails.TotalSOWAmount}`, options: { fill: { color: 'F0F0F0' }, color: '000000', valign: 'middle' } }
+          { text: 'SOW Value', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: ((): string => {
+              const sowNum = parseFloat(String(projectDetails.TotalSOWAmount || 0).replace(/[^0-9.-]+/g, '')) || 0;
+              return sowNum > 0 ? `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${sowNum.toLocaleString()}` : (projectDetails.TotalSOWAmount ? `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${projectDetails.TotalSOWAmount}` : 'N/A');
+            })(),
+            options: { fill: { color: 'F8FAFC' }, color: '1E293B', bold: true, valign: 'middle' }
+          }
         ],
         [
-          { text: 'Billing Value', options: { fill: { color: '00FF00' }, color: '000000', bold: true, valign: 'middle' } },
-          { text: `${projectDetails.Currency} ${projectDetails.TotalSOWAmount}`, options: { fill: { color: 'F0F0F0' }, color: '000000', valign: 'middle' } }
+          { text: 'Billing Value', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${numBilling.toLocaleString()}`,
+            options: { fill: { color: 'FFFFFF' }, color: '1E293B', bold: true, valign: 'middle' }
+          }
         ],
         [
-          { text: 'Total Contract Value', options: { fill: { color: 'D3D3D3' }, color: '000000', bold: true, valign: 'middle' } },
-          {
-            text: contractDetails && contractDetails.TotalContractValue !== null
-              ? contractDetails.TotalContractValue.toFixed(2)
-              : 'N/A',
-            options: {
-              fill: { color: 'F0F0F0' },
-              color: '000000',
-              valign: 'middle'
-            }
+          { text: 'Total Contract Value', options: { fill: { color: '1E293B' }, color: 'FFFFFF', bold: true, valign: 'middle' } },
+          { text: ((): string => {
+              const val = (contractDetails && contractDetails.TotalContractValue) ? contractDetails.TotalContractValue : (parseFloat(String(projectDetails.TotalSOWAmount || 0).replace(/[^0-9.-]+/g, '')) || 0);
+              return `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${val.toLocaleString()}`;
+            })(),
+            options: { fill: { color: 'F8FAFC' }, color: '1E293B', bold: true, valign: 'middle' }
           }
         ],
       ];
 
       slide1.addTable(tableData as unknown as Parameters<typeof slide1.addTable>[0], {
         x: 0.2,
-        y: 2.0,
-        w: 3.5,
-        colW: [1.5, 2],
-        border: { type: 'solid', color: '000000', pt: 1 },
-        fontSize: 10
+        y: 2.05,
+        w: 3.4,
+        colW: [1.4, 2.0],
+        border: { type: 'solid', color: 'CBD5E1', pt: 0.5 },
+        fontSize: 9.5
       });
 
       const trimText = (text: string): string => {
@@ -799,30 +894,30 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
 
       const additionalInfoTable = [
         [
-          { text: 'Description for Red & Amber Status', options: { fill: { color: 'F0F0F0' }, color: '000000', bold: true, valign: 'middle', align: 'top' } },
-          { text: trimText(riskText), options: { fill: { color: 'FFFFFF' }, color: '000000', valign: 'top', align: 'left' } }
+          { text: 'Description for Red & Amber Status', options: { fill: { color: '0F172A' }, color: 'FFFFFF', bold: true, valign: 'middle', align: 'left' } },
+          { text: trimText(riskText), options: { fill: { color: 'F8FAFC' }, color: '334155', valign: 'top', align: 'left' } }
         ],
         [
-          { text: 'Key Updates', options: { fill: { color: 'F0F0F0' }, color: '000000', bold: true, valign: 'middle', align: 'top' } },
-          { text: keyUpdatesBullets, options: { fill: { color: 'FFFFFF' }, color: '000000', valign: 'top', align: 'left' } }
+          { text: 'Key Updates', options: { fill: { color: '0F172A' }, color: 'FFFFFF', bold: true, valign: 'middle', align: 'left' } },
+          { text: keyUpdatesBullets || 'No major updates.', options: { fill: { color: 'FFFFFF' }, color: '334155', valign: 'top', align: 'left' } }
         ],
         [
-          { text: 'Next Steps / Other Updates', options: { fill: { color: 'F0F0F0' }, color: '000000', bold: true, valign: 'middle', align: 'top' } },
-          { text: nextStepsBullets, options: { fill: { color: 'FFFFFF' }, color: '000000', valign: 'top', align: 'left' } }
+          { text: 'Next Steps / Other Updates', options: { fill: { color: '0F172A' }, color: 'FFFFFF', bold: true, valign: 'middle', align: 'left' } },
+          { text: nextStepsBullets || 'No upcoming updates.', options: { fill: { color: 'F8FAFC' }, color: '334155', valign: 'top', align: 'left' } }
         ],
         [
-          { text: 'Risks / Challenge', options: { fill: { color: 'F0F0F0' }, color: '000000', bold: true, valign: 'middle', align: 'top' } },
-          { text: 'No Major Updates', options: { fill: { color: 'FFFFFF' }, color: '000000', valign: 'top', align: 'left' } }
+          { text: 'Risks / Challenges', options: { fill: { color: '0F172A' }, color: 'FFFFFF', bold: true, valign: 'middle', align: 'left' } },
+          { text: riskText !== 'No Major Updates.' ? riskText : 'No Major Risks Identified.', options: { fill: { color: 'FFFFFF' }, color: '334155', valign: 'top', align: 'left' } }
         ]
       ];
 
       slide1.addTable(additionalInfoTable as unknown as Parameters<typeof slide1.addTable>[0], {
-        x: 3.7,
-        y: 1.8,
-        w: 6.0,
+        x: 3.8,
+        y: 1.72,
+        w: 5.8,
         h: 3.6,
-        colW: [1.5, 4.4],
-        border: { type: 'solid', color: '000000', pt: 1 },
+        colW: [1.6, 4.2],
+        border: { type: 'solid', color: 'CBD5E1', pt: 0.5 },
         fontSize: 10
       });
 
@@ -880,12 +975,31 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
           setprojectEditableField({
             KeyUpdates: '',
             ProjectDescription: '',
-            NextStepUpdates: ''
+            NextStepUpdates: '',
+            BillingValue: ''
           });
         }
       }));
     }
   }, [selectedProject]);
+
+  useEffect(() => {
+    if (projectDetails) {
+      setprojectEditableField(prev => {
+        if (!prev.BillingValue) {
+          const tcv = (contractDetails && contractDetails.TotalContractValue) 
+            ? contractDetails.TotalContractValue 
+            : (parseFloat(String(projectDetails.TotalSOWAmount || 0).replace(/[^0-9.-]+/g, '')) || 0);
+          const contractBilling = contractDetails?.BillingValue || 0;
+          const autoBilling = contractBilling > 0 
+            ? contractBilling.toString() 
+            : calculateMonthlyBilling(tcv, projectDetails.PlannedStartDate, projectDetails.PlannedEndDate);
+          return { ...prev, BillingValue: autoBilling };
+        }
+        return prev;
+      });
+    }
+  }, [projectDetails, contractDetails]);
 
   const handleListTypeChange = (event: React.FormEvent<HTMLDivElement>, option?: IDropdownOption): void => {
     if (option) {
@@ -1011,7 +1125,8 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
                   setprojectEditableField({
                     KeyUpdates: '',
                     ProjectDescription: '',
-                    NextStepUpdates: ''
+                    NextStepUpdates: '',
+                    BillingValue: ''
                   });
 
                   executeAsync(getResourceAllocationData(selectedProject));
@@ -1072,7 +1187,23 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
                 </div>
                 <div className={styles.metricCard}>
                   <div className={styles.metricLabel}>Total Contract Value</div>
-                  <div className={styles.metricValue}>{contractDetails && contractDetails.TotalContractValue !== undefined && contractDetails.TotalContractValue !== null ? `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${contractDetails.TotalContractValue.toLocaleString()}` : 'N/A'}</div>
+                  <div className={styles.metricValue}>{((): string => {
+                    const val = (contractDetails && contractDetails.TotalContractValue) ? contractDetails.TotalContractValue : (parseFloat(String(projectDetails.TotalSOWAmount || 0).replace(/[^0-9.-]+/g, '')) || 0);
+                    return `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${val.toLocaleString()}`;
+                  })()}</div>
+                </div>
+                <div className={styles.metricCard}>
+                  <div className={styles.metricLabel}>Monthly Billing Value (Editable)</div>
+                  <TextField
+                    value={projectEditableField.BillingValue}
+                    onChange={(ev, newValue) => handleRemarksChange('BillingValue', ev, newValue)}
+                    placeholder="Enter monthly billing..."
+                    prefix={projectDetails.Currency ? `${projectDetails.Currency} ` : ''}
+                    styles={{
+                      fieldGroup: { border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff' },
+                      field: { fontWeight: 600, color: '#0f172a' }
+                    }}
+                  />
                 </div>
                 <div className={styles.metricCard}>
                   <div className={styles.metricLabel}>Deployed HeadCount</div>
@@ -1084,7 +1215,10 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
                 </div>
                 <div className={styles.metricCard}>
                   <div className={styles.metricLabel}>Currency SOW Amount</div>
-                  <div className={styles.metricValue}>{projectDetails.Currency} {projectDetails.TotalSOWAmount}</div>
+                  <div className={styles.metricValue}>{((): string => {
+                    const sowNum = parseFloat(String(projectDetails.TotalSOWAmount || 0).replace(/[^0-9.-]+/g, '')) || 0;
+                    return sowNum > 0 ? `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${sowNum.toLocaleString()}` : (projectDetails.TotalSOWAmount ? `${projectDetails.Currency ? projectDetails.Currency + ' ' : ''}${projectDetails.TotalSOWAmount}` : 'N/A');
+                  })()}</div>
                 </div>
               </div>
 
