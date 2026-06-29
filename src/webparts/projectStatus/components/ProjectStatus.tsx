@@ -25,6 +25,7 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
     billableHeadCount,
     riskAssessment,
     projectEditableField,
+    lastSavedRecord,
     saveMessage,
     isLoading,
     dismissMessage,
@@ -103,6 +104,7 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
                 deployedHeadCount={deployedHeadCount}
                 billableHeadCount={billableHeadCount}
                 projectEditableField={projectEditableField}
+                lastSavedRecord={lastSavedRecord}
                 onBillingValueChange={value => handleEditableFieldChange('BillingValue', value)}
               />
               <div className={styles.remarksSection}>

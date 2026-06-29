@@ -18,6 +18,7 @@ export interface IProjectItem {
   Currency: string;
   ProjectGEOS: string;
   QualityEngineer: string;
+  TotalContractValue?: number;
 }
 
 export interface IProjectEditableField {
@@ -43,6 +44,7 @@ export interface IRiskAssessment {
 export interface IContracts {
   TotalContractValue: number;
   BillingValue: number;
+  Currency?: string;
 }
 
 export interface IWSROutputItem {
@@ -79,6 +81,17 @@ export interface IWSROutputItem {
 
 export interface ISPWSROutputRecord {
   Created: string;
+  ProjectID?: string;
+  ProjectName?: string;
+  ProjectType?: string;
+  PlannedStartDate?: string;
+  PlannedEndDate?: string;
+  ProjectManager?: string;
+  DeliveryManager?: string;
+  TotalSOWAmount?: string;
+  Currency?: string;
+  ProjectGEOS?: string;
+  QualityEngineer?: string;
   overallStatus?: string;
   scope?: string;
   schedule?: string;
@@ -149,12 +162,12 @@ const escapeOData = (value: string): string => value.replace(/'/g, "''");
 
 const ALLOCATION_BATCH_SIZE = 15;
 
-const formatDateDisplay = (dateString: string | undefined): string => {
+export const formatDateDisplay = (dateString: string | undefined): string => {
   if (!dateString) return '';
   try {
-    return new Date(dateString)
-      .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      .replace(/ /g, '-');
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
   } catch {
     return dateString;
   }
@@ -185,7 +198,10 @@ export const getProjectDetails = async (projectId: string): Promise<IProjectItem
   if (!data || data.length === 0) return undefined;
 
   const raw = data[0] as unknown as Record<string, unknown>;
-  const rawSow = raw.TotalSOWAmount ?? raw.SOWAmount ?? raw.TotalSOW ?? raw.SOWValue ?? raw.ContractValue ?? '';
+  const rawSow = raw.TotalSOWAmount ?? raw.SOWAmount ?? raw.TotalSOW ?? raw.SOWValue ?? raw.ContractValue ?? raw.TotalContractValue ?? '';
+  const rawCurrency = raw.Currency ?? raw.Currecncy ?? raw.ProjectCurrency ?? raw.CurrencyCode ?? raw.SOWCurrency ?? raw.ContractCurrency ?? 'USD';
+  const rawTcv = raw.TotalContractValue ?? raw.ContractValue ?? raw.TCV ?? raw.TotalContractAmount ?? rawSow ?? 0;
+  const numTcv = typeof rawTcv === 'number' ? rawTcv : parseFloat(String(rawTcv).replace(/[^0-9.-]+/g, '')) || 0;
 
   return {
     ProjectID: data[0].ProjectID,
@@ -196,9 +212,10 @@ export const getProjectDetails = async (projectId: string): Promise<IProjectItem
     projectManager: data[0].ProjectManager?.Title || '',
     deliveryManager: data[0].DeliveryManager?.Title || '',
     TotalSOWAmount: String(rawSow),
-    Currency: data[0].Currency || '',
+    Currency: String(rawCurrency) || 'USD',
     ProjectGEOS: data[0].ProjectGEOS || '',
     QualityEngineer: data[0].QualityEngineer?.Title || '',
+    TotalContractValue: numTcv,
   };
 };
 
@@ -243,52 +260,79 @@ export const getResourceAllocation = async (projectId: string): Promise<{ deploy
 
 export const getContractData = async (projectId: string): Promise<IContracts | undefined> => {
   const safe = escapeOData(projectId);
-  let contractItems: ISPContractItem[] = [];
+  console.log('[getContractData] Starting fetch for projectId:', projectId);
+  let contractItems: Record<string, unknown>[] = [];
 
-  // Strategy 1: Direct field filter
   try {
-    contractItems = await sp.web.lists.getByTitle('Contracts').items
-      .top(5000)
-      .filter(`ProjectID eq '${safe}' or ProjectId eq '${safe}'`)();
-  } catch { /* fall through */ }
-
-  // Strategy 2: Lookup expand
-  if (contractItems.length === 0) {
-    try {
-      contractItems = await sp.web.lists.getByTitle('Contracts').items
-        .top(5000)
-        .select('*,ProjectID/ProjectID,ProjectID/Title,TotalContractValue')
-        .expand('ProjectID')
-        .filter(`ProjectID/ProjectID eq '${safe}' or ProjectID/Title eq '${safe}'`)();
-    } catch { /* fall through */ }
+    const res: Record<string, unknown>[] = await sp.web.lists.getByTitle('Contracts').items
+      .top(100)
+      .filter(`ProjectId eq '${safe}'`)();
+    console.log('[getContractData] Filter ProjectId result count:', res.length);
+    if (res.length > 0) contractItems = res;
+  } catch (err) {
+    console.warn('[getContractData] Filter ProjectId failed:', err);
   }
 
-  // Strategy 3: In-memory fallback (last resort — logs a warning)
   if (contractItems.length === 0) {
     try {
-      console.warn('[getContractData] Falling back to in-memory filter for ProjectID:', projectId);
-      const all: ISPContractItem[] = await sp.web.lists.getByTitle('Contracts').items.top(2000)();
+      const res: Record<string, unknown>[] = await sp.web.lists.getByTitle('Contracts').items
+        .top(100)
+        .filter(`ProjectID eq '${safe}'`)();
+      console.log('[getContractData] Filter ProjectID result count:', res.length);
+      if (res.length > 0) contractItems = res;
+    } catch (err) {
+      console.warn('[getContractData] Filter ProjectID failed:', err);
+    }
+  }
+
+  if (contractItems.length === 0) {
+    try {
+      console.log('[getContractData] Fetching top 2000 items from Contracts for in-memory match...');
+      const all: Record<string, unknown>[] = await sp.web.lists.getByTitle('Contracts').items.top(2000)();
+      console.log('[getContractData] Total items fetched from Contracts:', all.length);
+      if (all.length > 0) {
+        console.log('[getContractData] Sample contract item keys:', Object.keys(all[0]));
+      }
       contractItems = all.filter(item => {
-        const pid = (item.ProjectID as Record<string, unknown>)?.ProjectID
-          || (item.ProjectID as Record<string, unknown>)?.Title
-          || item.ProjectID
-          || item.ProjectId;
-        return pid && String(pid).trim().toLowerCase() === projectId.trim().toLowerCase();
+        const p1 = String(item.ProjectId ?? '').trim().toLowerCase();
+        const p2 = String(item.ProjectID ?? '').trim().toLowerCase();
+        const target = projectId.trim().toLowerCase();
+        return p1 === target || p2 === target;
       });
-    } catch { /* all strategies exhausted */ }
+      console.log('[getContractData] In-memory matched items count:', contractItems.length);
+    } catch (err) {
+      console.error('[getContractData] In-memory fetch failed:', err);
+    }
   }
 
-  if (contractItems.length === 0) return undefined;
+  if (contractItems.length === 0) {
+    console.warn('[getContractData] No contract items matched for:', projectId);
+    return undefined;
+  }
 
   const item = contractItems[0];
-  const rawVal = item.TotalContractValue ?? item.ContractValue ?? item.TotalValue ?? item.Amount ?? 0;
+  console.log('[getContractData] Found matching contract item:', item);
+
+  const rawVal = item.TotalContractValue 
+    ?? item.TotalContractsValue 
+    ?? item.Total_x0020_Contracts_x0020_value 
+    ?? item.Total_x0020_Contract_x0020_Value 
+    ?? item['Total Contracts value'] 
+    ?? item['Total Contract Value'] 
+    ?? item.ContractValue 
+    ?? item.Amount 
+    ?? 0;
   const numericVal = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal).replace(/[^0-9.-]+/g, '')) || 0;
 
   const rawBilling = item.BillingValue ?? item.BilledValue ?? item.BillingAmount
     ?? item.InvoicedAmount ?? item.TotalInvoiced ?? item.InvoiceAmount ?? item.TotalBilled ?? 0;
   const numericBilling = typeof rawBilling === 'number' ? rawBilling : parseFloat(String(rawBilling).replace(/[^0-9.-]+/g, '')) || 0;
 
-  return { TotalContractValue: numericVal, BillingValue: numericBilling };
+  const contractCurrency = String(item.Currecncy ?? item.Currency ?? item.ContractCurrency ?? item.ProjectCurrency ?? '').trim();
+
+  console.log('[getContractData] Parsed result -> TotalContractValue:', numericVal, 'BillingValue:', numericBilling, 'Currency:', contractCurrency);
+
+  return { TotalContractValue: numericVal, BillingValue: numericBilling, Currency: contractCurrency || undefined };
 };
 
 export const checkTodayWSR = async (projectId: string, reportTitle: string): Promise<ISPWSROutputRecord | undefined> => {
@@ -316,4 +360,76 @@ export const getAllWSRForProject = async (projectId: string): Promise<ISPWSROutp
 
 export const saveWSROutput = async (data: Partial<IWSROutputItem>): Promise<void> => {
   await sp.web.lists.getByTitle('WSROutput').items.add(data);
+};
+
+export const getInvoiceData = async (projectId: string): Promise<number | undefined> => {
+  const safe = escapeOData(projectId);
+  console.log('[getInvoiceData] Starting fetch for projectId:', projectId);
+
+  // Focus directly on 'Invoices' as provided in user schema
+  const listName = 'Invoices';
+  let invoiceItems: Record<string, unknown>[] = [];
+
+  try {
+    const res: Record<string, unknown>[] = await sp.web.lists.getByTitle(listName).items
+      .top(50)
+      .filter(`ProjectId eq '${safe}'`)
+      .orderBy('Created', false)();
+    console.log('[getInvoiceData] Filter ProjectId result count:', res.length);
+    if (res.length > 0) invoiceItems = res;
+  } catch (err) {
+    console.warn('[getInvoiceData] Filter ProjectId failed:', err);
+  }
+
+  if (invoiceItems.length === 0) {
+    try {
+      const res: Record<string, unknown>[] = await sp.web.lists.getByTitle(listName).items
+        .top(50)
+        .filter(`ProjectID eq '${safe}'`)
+        .orderBy('Created', false)();
+      console.log('[getInvoiceData] Filter ProjectID result count:', res.length);
+      if (res.length > 0) invoiceItems = res;
+    } catch (err) {
+      console.warn('[getInvoiceData] Filter ProjectID failed:', err);
+    }
+  }
+
+  if (invoiceItems.length === 0) {
+    try {
+      console.log('[getInvoiceData] Fetching top 1000 items from Invoices for in-memory match...');
+      const all: Record<string, unknown>[] = await sp.web.lists.getByTitle(listName).items.top(1000).orderBy('Created', false)();
+      console.log('[getInvoiceData] Total items fetched from Invoices:', all.length);
+      if (all.length > 0) {
+        console.log('[getInvoiceData] Sample invoice item keys:', Object.keys(all[0]));
+      }
+      invoiceItems = all.filter(item => {
+        const p1 = String(item.ProjectId ?? '').trim().toLowerCase();
+        const p2 = String(item.ProjectID ?? '').trim().toLowerCase();
+        const target = projectId.trim().toLowerCase();
+        return p1 === target || p2 === target;
+      });
+      console.log('[getInvoiceData] In-memory matched invoice items count:', invoiceItems.length);
+    } catch (err) {
+      console.error('[getInvoiceData] In-memory fetch failed:', err);
+    }
+  }
+
+  if (invoiceItems.length > 0) {
+    const item = invoiceItems[0];
+    console.log('[getInvoiceData] Found matching invoice item:', item);
+    const val = item.InvoiceAmount 
+      ?? item.InvoiceAmount0 
+      ?? item.InvoiceAmount1 
+      ?? item.Invoice_x0020_Amount 
+      ?? item['Invoice Amount'] 
+      ?? item.BillingValue 
+      ?? item.Amount 
+      ?? 0;
+    const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.-]+/g, '')) || 0;
+    console.log('[getInvoiceData] Parsed InvoiceAmount:', num);
+    if (num > 0) return num;
+  }
+
+  console.warn('[getInvoiceData] No valid invoice amount found for:', projectId);
+  return undefined;
 };

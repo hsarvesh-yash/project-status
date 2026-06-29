@@ -3,7 +3,7 @@
   "solution": {
     "name": "project-status-client-side-solution",
     "id": "d8d70c4c-daba-4c7e-ab61-42877e609859",
-    "version": "2.2.14.0",
+    "version": "2.2.15.0",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": true,
     "isDomainIsolated": false,
@@ -30,7 +30,7 @@
         "title": "project-status Feature",
         "description": "The feature that activates elements of the project-status solution.",
         "id": "6051901a-1f8c-4fe0-94f2-1dededf7ef29",
-        "version": "2.2.14.0"
+        "version": "2.2.15.0"
       }
     ]
   },

@@ -13,6 +13,7 @@ import {
   getProjectDetails,
   getResourceAllocation,
   getContractData,
+  getInvoiceData,
   checkTodayWSR,
   getAllWSRForProject,
   saveWSROutput,
@@ -50,6 +51,7 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
   const [billableHeadCount, setBillableHeadCount] = useState<number | undefined>(undefined);
   const [riskAssessment, setRiskAssessment] = useState<IRiskAssessment>({ ...DEFAULT_RISK });
   const [projectEditableField, setProjectEditableField] = useState<IProjectEditableField>({ ...DEFAULT_EDITABLE });
+  const [lastSavedRecord, setLastSavedRecord] = useState<ISPWSROutputRecord | undefined>(undefined);
   const [saveMessage, setSaveMessage] = useState<{ type: MessageBarType; text: string } | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const spInitialized = useRef(false);
@@ -82,9 +84,6 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
     });
     if (data.deployedHeadCount !== undefined) setDeployedHeadCount(data.deployedHeadCount);
     if (data.BillableHeadCount !== undefined) setBillableHeadCount(data.BillableHeadCount);
-    if (data.TotalContractValue !== undefined) {
-      setContractDetails({ TotalContractValue: data.TotalContractValue, BillingValue: data.BillingValue || 0 });
-    }
   };
 
   // Initialize PnP SP once and load project list
@@ -105,37 +104,69 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
     loadProjects().catch((err: unknown) => console.error('Error loading projects:', err));
   }, []);
 
-  // Load all project data when selection changes — sequential to fix race condition
+  // Load all project data when selection changes
   useEffect(() => {
     if (!selectedProject) return;
 
     const loadProjectData = async (): Promise<void> => {
       setIsLoading(true);
       try {
-        // Step 1: project details first (its name is needed to build the WSR report title)
+        // Step 1: project details first
         const details = await getProjectDetails(selectedProject);
         setProjectDetails(details);
 
-        // Step 2: contracts + resources in parallel
-        const [contracts, resources] = await Promise.all([
+        // Step 2: contracts, resources, invoices, and saved WSR history in parallel
+        const [contracts, resources, invoiceValue, allWSR] = await Promise.all([
           getContractData(selectedProject),
           getResourceAllocation(selectedProject),
+          getInvoiceData(selectedProject),
+          getAllWSRForProject(selectedProject),
         ]);
+        if (details) {
+          if (contracts?.Currency) details.Currency = contracts.Currency;
+          if (contracts?.TotalContractValue && contracts.TotalContractValue > 0) {
+            details.TotalContractValue = contracts.TotalContractValue;
+            if (!details.TotalSOWAmount || parseFloat(String(details.TotalSOWAmount).replace(/[^0-9.-]+/g, '')) === 0) {
+              details.TotalSOWAmount = String(contracts.TotalContractValue);
+            }
+          }
+        }
+        setProjectDetails(details ? { ...details } : undefined);
         setContractDetails(contracts);
         setDeployedHeadCount(resources.deployed);
         setBillableHeadCount(resources.billable);
 
-        // Step 3: check today's WSR (requires project name from step 1)
+        // Step 3: Automatically load last detailed saved from WSROutput list if available
+        let loadedFromSaved = false;
+        if (allWSR && allWSR.length > 0) {
+          const mostRecent = allWSR[0];
+          setLastSavedRecord(mostRecent);
+          applyWSRData(mostRecent);
+          loadedFromSaved = true;
+          const savedDate = new Date(mostRecent.Created).toLocaleDateString();
+          showMessage(MessageBarType.info, `Automatically loaded last saved project details (from ${savedDate}).`);
+        } else {
+          setLastSavedRecord(undefined);
+          setRiskAssessment({ ...DEFAULT_RISK });
+          setProjectEditableField({ ...DEFAULT_EDITABLE });
+        }
+
+        // Step 4: Determine monthly billing value if not set by saved record
         if (details) {
-          const reportTitle = `${details.ProjectName} - WSR - ${getCurrentDate()}`;
-          const todayWSR = await checkTodayWSR(selectedProject, reportTitle);
-          if (todayWSR) {
-            applyWSRData(todayWSR);
-            showMessage(MessageBarType.info, "Existing WSR data found and loaded for today's date!");
-          } else {
-            setRiskAssessment({ ...DEFAULT_RISK });
-            setProjectEditableField({ ...DEFAULT_EDITABLE });
-          }
+          setProjectEditableField(prev => {
+            if (prev.BillingValue && loadedFromSaved) return prev;
+            
+            let billing = '';
+            if (invoiceValue && invoiceValue > 0) {
+              billing = String(invoiceValue);
+            } else if (contracts?.BillingValue && contracts.BillingValue > 0) {
+              billing = String(contracts.BillingValue);
+            } else {
+              const tcv = contracts?.TotalContractValue ?? details.TotalContractValue ?? (parseFloat(String(details.TotalSOWAmount || 0).replace(/[^0-9.-]+/g, '')) || 0);
+              billing = calculateMonthlyBilling(tcv, details.PlannedStartDate, details.PlannedEndDate);
+            }
+            return { ...prev, BillingValue: billing };
+          });
         }
       } catch (error) {
         console.error('Error loading project data:', error);
@@ -147,21 +178,6 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
 
     loadProjectData().catch((err: unknown) => console.error('Error loading project data:', err));
   }, [selectedProject]);
-
-  // Auto-populate billing when project or contract data arrives
-  useEffect(() => {
-    if (!projectDetails) return;
-    setProjectEditableField(prev => {
-      if (prev.BillingValue) return prev;
-      const tcv = contractDetails?.TotalContractValue
-        ?? (parseFloat(String(projectDetails.TotalSOWAmount || 0).replace(/[^0-9.-]+/g, '')) || 0);
-      const contractBilling = contractDetails?.BillingValue || 0;
-      const autoBilling = contractBilling > 0
-        ? String(contractBilling)
-        : calculateMonthlyBilling(tcv, projectDetails.PlannedStartDate, projectDetails.PlannedEndDate);
-      return { ...prev, BillingValue: autoBilling };
-    });
-  }, [projectDetails, contractDetails]);
 
   const handleSelectProject = (projectId: string): void => setSelectedProject(projectId);
 
@@ -284,6 +300,7 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
     billableHeadCount,
     riskAssessment,
     projectEditableField,
+    lastSavedRecord,
     saveMessage,
     isLoading,
     dismissMessage,
