@@ -1,0 +1,23 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "whichFolder": "subdir",
+    "solutionName": "project-status",
+    "environment": "spo",
+    "packageManager": "npm",
+    "skipFeatureDeployment": true,
+    "useGulp": false,
+    "componentType": "webpart",
+    "template": "react",
+    "componentName": "ProjectStatus",
+    "componentDescription": "Project Status Web Part",
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.22.3",
+    "sdksVersions": {},
+    "version": "1.23.0",
+    "libraryName": "project-status",
+    "libraryId": "d8d70c4c-daba-4c7e-ab61-42877e609859",
+    "solutionShortDescription": "project-status description",
+    "isDomainIsolated": false
+  }
+}
