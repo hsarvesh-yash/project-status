@@ -5,9 +5,9 @@ import { IProjectItem, IProjectEditableField, IContracts } from '../services/Pro
 
 interface IMetricsGridProps {
   projectDetails: IProjectItem;
-  contractDetails: IContracts | null;
-  deployedHeadCount: number | null;
-  billableHeadCount: number | null;
+  contractDetails: IContracts | undefined;
+  deployedHeadCount: number | undefined;
+  billableHeadCount: number | undefined;
   projectEditableField: IProjectEditableField;
   onBillingValueChange: (value: string) => void;
 }
@@ -39,8 +39,8 @@ export const MetricsGrid: React.FC<IMetricsGridProps> = ({
     { label: 'Delivery Manager', value: projectDetails.deliveryManager },
     { label: 'Geographics', value: projectDetails.ProjectGEOS },
     { label: 'Total Contract Value', value: formatCurrency(projectDetails.Currency, tcv) },
-    { label: 'Deployed HeadCount', value: deployedHeadCount !== null ? String(deployedHeadCount) : 'N/A' },
-    { label: 'Billable HeadCount', value: billableHeadCount !== null ? billableHeadCount.toFixed(2) : 'N/A' },
+    { label: 'Deployed HeadCount', value: deployedHeadCount !== undefined ? String(deployedHeadCount) : 'N/A' },
+    { label: 'Billable HeadCount', value: billableHeadCount !== undefined ? billableHeadCount.toFixed(2) : 'N/A' },
     { label: 'Currency SOW Amount', value: formatCurrency(projectDetails.Currency, projectDetails.TotalSOWAmount) },
   ];
 

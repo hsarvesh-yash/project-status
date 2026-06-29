@@ -173,7 +173,7 @@ export const getProjectList = async (userEmail: string): Promise<IDropdownOption
   return data.map(item => ({ key: item.ProjectID, text: item.ProjectName }));
 };
 
-export const getProjectDetails = async (projectId: string): Promise<IProjectItem | null> => {
+export const getProjectDetails = async (projectId: string): Promise<IProjectItem | undefined> => {
   const safe = escapeOData(projectId);
   const data: ISPProjectItem[] = await sp.web.lists
     .getByTitle('IMSProjects')
@@ -182,7 +182,7 @@ export const getProjectDetails = async (projectId: string): Promise<IProjectItem
     .select('*,ProjectID,CustomerName,ProjectName,ProjectType,PlannedStartDate,PlannedEndDate,DeliveryManager/Title,ProjectManager/Title,Currency,TotalSOWAmount,ProjectGEOS,QualityEngineer/Title')
     .expand('DeliveryManager,ProjectManager,QualityEngineer')();
 
-  if (!data || data.length === 0) return null;
+  if (!data || data.length === 0) return undefined;
 
   const raw = data[0] as unknown as Record<string, unknown>;
   const rawSow = raw.TotalSOWAmount ?? raw.SOWAmount ?? raw.TotalSOW ?? raw.SOWValue ?? raw.ContractValue ?? '';
@@ -241,7 +241,7 @@ export const getResourceAllocation = async (projectId: string): Promise<{ deploy
   return { deployed: allAllocations.length, billable };
 };
 
-export const getContractData = async (projectId: string): Promise<IContracts | null> => {
+export const getContractData = async (projectId: string): Promise<IContracts | undefined> => {
   const safe = escapeOData(projectId);
   let contractItems: ISPContractItem[] = [];
 
@@ -278,7 +278,7 @@ export const getContractData = async (projectId: string): Promise<IContracts | n
     } catch { /* all strategies exhausted */ }
   }
 
-  if (contractItems.length === 0) return null;
+  if (contractItems.length === 0) return undefined;
 
   const item = contractItems[0];
   const rawVal = item.TotalContractValue ?? item.ContractValue ?? item.TotalValue ?? item.Amount ?? 0;
@@ -291,7 +291,7 @@ export const getContractData = async (projectId: string): Promise<IContracts | n
   return { TotalContractValue: numericVal, BillingValue: numericBilling };
 };
 
-export const checkTodayWSR = async (projectId: string, reportTitle: string): Promise<ISPWSROutputRecord | null> => {
+export const checkTodayWSR = async (projectId: string, reportTitle: string): Promise<ISPWSROutputRecord | undefined> => {
   const safeId = escapeOData(projectId);
   const safeTitle = escapeOData(reportTitle);
   const items: ISPWSROutputRecord[] = await sp.web.lists
@@ -300,7 +300,7 @@ export const checkTodayWSR = async (projectId: string, reportTitle: string): Pro
     .filter(`ProjectID eq '${safeId}' and Title eq '${safeTitle}'`)
     .select('*')
     .get();
-  return items.length > 0 ? items[0] : null;
+  return items.length > 0 ? items[0] : undefined;
 };
 
 export const getAllWSRForProject = async (projectId: string): Promise<ISPWSROutputRecord[]> => {

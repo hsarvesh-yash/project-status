@@ -76,12 +76,12 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
             <div className={styles.actionButtonsGroup}>
               <PrimaryButton
                 text="Load Most Recent WSR"
-                onClick={() => { void handleLoadMostRecent(); }}
+                onClick={() => { handleLoadMostRecent().catch((err: unknown) => console.error(err)); }}
                 iconProps={{ iconName: 'Download' }}
               />
               <PrimaryButton
                 text="Clear Form"
-                onClick={() => { void handleClearForm(); }}
+                onClick={() => { handleClearForm().catch((err: unknown) => console.error(err)); }}
                 iconProps={{ iconName: 'Refresh' }}
               />
             </div>
@@ -151,7 +151,7 @@ export default function ProjectStatus(props: IProjectStatusProps): React.ReactEl
                 <PrimaryButton
                   text="Export to PowerPoint"
                   iconProps={{ iconName: 'PowerPointDocument' }}
-                  onClick={() => { void handleExportToPPT(); }}
+                  onClick={() => { handleExportToPPT().catch((err: unknown) => console.error(err)); }}
                 />
               </div>
             </div>

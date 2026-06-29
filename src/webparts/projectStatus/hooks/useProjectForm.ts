@@ -40,25 +40,26 @@ const DEFAULT_EDITABLE: IProjectEditableField = {
   BillingValue: '',
 };
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export const useProjectForm = (context: WebPartContext, backgroundImageUrl: string) => {
   const [listTypeOptions, setListTypeOptions] = useState<IDropdownOption[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | undefined>(undefined);
-  const [projectDetails, setProjectDetails] = useState<IProjectItem | null>(null);
-  const [contractDetails, setContractDetails] = useState<IContracts | null>(null);
-  const [deployedHeadCount, setDeployedHeadCount] = useState<number | null>(null);
-  const [billableHeadCount, setBillableHeadCount] = useState<number | null>(null);
+  const [projectDetails, setProjectDetails] = useState<IProjectItem | undefined>(undefined);
+  const [contractDetails, setContractDetails] = useState<IContracts | undefined>(undefined);
+  const [deployedHeadCount, setDeployedHeadCount] = useState<number | undefined>(undefined);
+  const [billableHeadCount, setBillableHeadCount] = useState<number | undefined>(undefined);
   const [riskAssessment, setRiskAssessment] = useState<IRiskAssessment>({ ...DEFAULT_RISK });
   const [projectEditableField, setProjectEditableField] = useState<IProjectEditableField>({ ...DEFAULT_EDITABLE });
-  const [saveMessage, setSaveMessage] = useState<{ type: MessageBarType; text: string } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{ type: MessageBarType; text: string } | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const spInitialized = useRef(false);
 
   const showMessage = (type: MessageBarType, text: string, duration = 5000): void => {
     setSaveMessage({ type, text });
-    setTimeout(() => setSaveMessage(null), duration);
+    setTimeout(() => setSaveMessage(undefined), duration);
   };
 
-  const dismissMessage = (): void => setSaveMessage(null);
+  const dismissMessage = (): void => setSaveMessage(undefined);
 
   const applyWSRData = (data: ISPWSROutputRecord): void => {
     setRiskAssessment({
@@ -79,9 +80,9 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
       NextStepUpdates: data.NextStepUpdates || '',
       BillingValue: data.BillingValue ? String(data.BillingValue) : '',
     });
-    if (data.deployedHeadCount != null) setDeployedHeadCount(data.deployedHeadCount);
-    if (data.BillableHeadCount != null) setBillableHeadCount(data.BillableHeadCount);
-    if (data.TotalContractValue != null) {
+    if (data.deployedHeadCount !== undefined) setDeployedHeadCount(data.deployedHeadCount);
+    if (data.BillableHeadCount !== undefined) setBillableHeadCount(data.BillableHeadCount);
+    if (data.TotalContractValue !== undefined) {
       setContractDetails({ TotalContractValue: data.TotalContractValue, BillingValue: data.BillingValue || 0 });
     }
   };
@@ -101,8 +102,8 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
         showMessage(MessageBarType.error, 'Error loading projects. Please refresh.', 8000);
       }
     };
-    void loadProjects();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    loadProjects().catch((err: unknown) => console.error('Error loading projects:', err));
+  }, []);
 
   // Load all project data when selection changes — sequential to fix race condition
   useEffect(() => {
@@ -144,8 +145,8 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
       }
     };
 
-    void loadProjectData();
-  }, [selectedProject]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadProjectData().catch((err: unknown) => console.error('Error loading project data:', err));
+  }, [selectedProject]);
 
   // Auto-populate billing when project or contract data arrives
   useEffect(() => {

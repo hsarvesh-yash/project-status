@@ -6,9 +6,9 @@ export interface IPptExportData {
   projectDetails: IProjectItem;
   projectEditableField: IProjectEditableField;
   riskAssessment: IRiskAssessment;
-  contractDetails: IContracts | null;
-  deployedHeadCount: number | null;
-  billableHeadCount: number | null;
+  contractDetails: IContracts | undefined;
+  deployedHeadCount: number | undefined;
+  billableHeadCount: number | undefined;
   numBilling: number;
   backgroundImageUrl: string;
 }
@@ -53,11 +53,14 @@ export const exportToPpt = async (data: IPptExportData): Promise<void> => {
   const slide = pptx.addSlide();
   slide.background = { path: backgroundImageUrl };
 
+  slide.addText(projectDetails.ProjectName, {
+    x: 0.4, y: 0.05, w: 9.1, h: 0.28, color: '0F172A', fontSize: 18, bold: true,
+  });
   slide.addText(`Project Owner: ${projectDetails.projectManager}`, {
-    x: 0.4, y: 0.28, w: 5.0, h: 0.3, color: '0F172A', fontSize: 15, bold: true,
+    x: 0.4, y: 0.33, w: 5.0, h: 0.3, color: '0F172A', fontSize: 15, bold: true,
   });
   slide.addText(`Updated as on ${formattedDate}`, {
-    x: 5.5, y: 0.28, w: 3.8, h: 0.3, color: '059669', fontSize: 12, bold: true, align: 'right',
+    x: 5.5, y: 0.33, w: 3.8, h: 0.3, color: '059669', fontSize: 12, bold: true, align: 'right',
   });
   slide.addShape(pptx.ShapeType.rect, {
     x: 0.2, y: 0.72, w: 0.06, h: 0.9,
@@ -99,8 +102,8 @@ export const exportToPpt = async (data: IPptExportData): Promise<void> => {
         },
       },
     ]),
-    [{ text: 'Billable Head Count', options: headerOpts }, { text: billableHeadCount !== null ? billableHeadCount.toFixed(2) : 'N/A', options: altRow }],
-    [{ text: 'Deployed Head Count', options: headerOpts }, { text: deployedHeadCount !== null ? String(deployedHeadCount) : 'N/A', options: plainRow }],
+    [{ text: 'Billable Head Count', options: headerOpts }, { text: billableHeadCount !== undefined ? billableHeadCount.toFixed(2) : 'N/A', options: altRow }],
+    [{ text: 'Deployed Head Count', options: headerOpts }, { text: deployedHeadCount !== undefined ? String(deployedHeadCount) : 'N/A', options: plainRow }],
     [{ text: 'SOW Value', options: headerOpts }, { text: formatCurrency(projectDetails.Currency, projectDetails.TotalSOWAmount), options: { ...altRow, bold: true } }],
     [{ text: 'Billing Value', options: headerOpts }, { text: formatCurrency(projectDetails.Currency, numBilling), options: { ...plainRow, bold: true } }],
     [{ text: 'Total Contract Value', options: headerOpts }, { text: formatCurrency(projectDetails.Currency, tcv), options: { ...altRow, bold: true } }],
