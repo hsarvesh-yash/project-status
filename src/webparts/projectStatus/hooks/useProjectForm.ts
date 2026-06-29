@@ -260,7 +260,7 @@ export const useProjectForm = (context: WebPartContext, backgroundImageUrl: stri
         contractDetails,
         deployedHeadCount,
         billableHeadCount,
-        numBilling,
+        monthlyBillingValue: numBilling,
         backgroundImageUrl,
       });
       showMessage(
